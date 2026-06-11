@@ -350,7 +350,8 @@ export default function Home() {
       </div>
     </div>
   );
-}export async function generatePDF(propertyData, photos, logoFile, agencyName, targetLang) {
+}
+export async function generatePDF(propertyData, photos, logoFile, agencyName, targetLang) {
   const PDFLib = await loadPdfLibIfNeeded();
   const { PDFDocument, rgb, StandardFonts } = PDFLib;
 
