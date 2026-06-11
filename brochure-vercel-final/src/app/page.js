@@ -44,7 +44,7 @@ async function extractPdfText(file) {
 }
 
 // ── pdf-lib loader ──
-async function loadPdfLibIfNeeded() {
+export async function loadPdfLibIfNeeded() {
   if (window.PDFLib) return window.PDFLib;
   return new Promise((resolve, reject) => {
     const s = document.createElement("script");
@@ -350,7 +350,7 @@ export default function Home() {
       </div>
     </div>
   );
-}async function generatePDF(propertyData, photos, logoFile, agencyName, targetLang) {
+}export async function generatePDF(propertyData, photos, logoFile, agencyName, targetLang) {
   const PDFLib = await loadPdfLibIfNeeded();
   const { PDFDocument, rgb, StandardFonts } = PDFLib;
 
