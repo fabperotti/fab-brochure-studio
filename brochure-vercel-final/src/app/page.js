@@ -43,6 +43,18 @@ async function extractPdfText(file) {
   return text.trim();
 }
 
+// ── pdf-lib loader ──
+async function loadPdfLibIfNeeded() {
+  if (window.PDFLib) return window.PDFLib;
+  return new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js";
+    s.onload = () => resolve(window.PDFLib);
+    s.onerror = () => reject(new Error("Cannot load pdf-lib"));
+    document.head.appendChild(s);
+  });
+}
+
 // ── Upload Zone ──
 function UploadZone({ accept, onFiles, multiple = false, children }) {
   const [drag, setDrag] = useState(false);
