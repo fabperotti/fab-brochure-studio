@@ -1,3 +1,14 @@
+async function loadPdfLibIfNeeded() {
+  if (window.PDFLib) return window.PDFLib;
+  return new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js";
+    s.onload = () => resolve(window.PDFLib);
+    s.onerror = () => reject(new Error("Cannot load pdf-lib"));
+    document.head.appendChild(s);
+  });
+}
+
 async function generatePDF(propertyData, photos, logoFile, agencyName, targetLang) {
   const PDFLib = await loadPdfLibIfNeeded();
   const { PDFDocument, rgb, StandardFonts } = PDFLib;
