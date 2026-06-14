@@ -28,26 +28,43 @@ const EMAIL_T = {
   sv: { subject: (t) => `Exklusiv Fastighet: ${t}`, greeting: "Bästa kund,", intro: "Vi har glädjen att presentera en exceptionell fastighet som matchar dina önskemål:", attached: "Den fullständiga broschyren med foton och detaljer bifogas.", closing: "Vi ser fram emot att ordna en visning när det passar dig.", regards: "Med vänliga hälsningar,", priceLabel: "Pris", locationLabel: "Läge" },
 };
 
+function cleanEmDash(str) {
+  if (!str) return str;
+  // Replace em-dash/en-dash surrounded by spaces with a comma — reads more naturally
+  // and avoids the "—" character that looks AI-generated in plain-text emails.
+  return str.replace(/\s+[—–]\s+/g, ", ").replace(/[—–]/g, ",");
+}
+
 function buildEmailText(propertyData, targetLang, agencyName) {
   const t = EMAIL_T[targetLang] || EMAIL_T.en;
-  const lines = [];
-  lines.push(t.greeting, "");
-  lines.push(t.intro, "");
-  lines.push(propertyData.title || "", "");
-  if (propertyData.tagline) lines.push(propertyData.tagline, "");
-  if (propertyData.description) lines.push(propertyData.description, "");
-  if (propertyData.location) lines.push(`${t.locationLabel}: ${propertyData.location}`);
-  if (propertyData.price) lines.push(`${t.priceLabel}: ${propertyData.price}`);
-  lines.push("", t.attached, "");
-  lines.push(t.closing, "");
-  lines.push(t.regards);
-  if (agencyName) lines.push(agencyName);
-  return lines.join("\n");
+  const title = cleanEmDash(propertyData.title || "");
+  const tagline = cleanEmDash(propertyData.tagline || "");
+  const description = cleanEmDash(propertyData.description || "");
+
+  const paragraphs = [];
+  paragraphs.push(t.greeting);
+  paragraphs.push(t.intro);
+  paragraphs.push(title);
+  if (tagline) paragraphs.push(tagline);
+  if (description) paragraphs.push(description);
+
+  const details = [];
+  if (propertyData.location) details.push(`${t.locationLabel}: ${cleanEmDash(propertyData.location)}`);
+  if (propertyData.price) details.push(`${t.priceLabel}: ${propertyData.price}`);
+  if (details.length) paragraphs.push(details.join("\n"));
+
+  paragraphs.push(t.attached);
+  paragraphs.push(t.closing);
+
+  const signature = agencyName ? `${t.regards}\n${agencyName}` : t.regards;
+  paragraphs.push(signature);
+
+  return paragraphs.join("\n\n");
 }
 
 function buildEmailSubject(propertyData, targetLang) {
   const t = EMAIL_T[targetLang] || EMAIL_T.en;
-  return t.subject(propertyData.title || "");
+  return t.subject(cleanEmDash(propertyData.title || ""));
 }
 
 // ── PDF.js extraction ──
@@ -262,8 +279,16 @@ async function generatePDF(propertyData, photos, logoFile, agencyName, targetLan
   if (logoImg) {
     const ld = logoImg.scaleToFit(140, 64);
     p1.drawImage(logoImg, { x: W - ld.width - 28, y: H - ld.height - 22, width: ld.width, height: ld.height });
-  } else if (agencyName) {
-    p1.drawText(trunc(agencyName, 22).toUpperCase(), { x: W - 180, y: H - 24, size: 8, font: fontB, color: WHITE });
+  }
+  if (agencyName) {
+    if (logoImg) {
+      // Show agency name in the dark panel, right-aligned, above the footer
+      const nameText = trunc(agencyName, 30).toUpperCase();
+      const nameWidth = fontB.widthOfTextAtSize(nameText, 8);
+      p1.drawText(nameText, { x: W - 36 - nameWidth, y: 32, size: 8, font: fontB, color: GOLD });
+    } else {
+      p1.drawText(trunc(agencyName, 22).toUpperCase(), { x: W - 180, y: H - 24, size: 8, font: fontB, color: WHITE });
+    }
   }
 
   drawFooter(p1, fontR, 1, totalPages, confidential);
@@ -279,6 +304,9 @@ async function generatePDF(propertyData, photos, logoFile, agencyName, targetLan
   if (logoImg) {
     const ld = logoImg.scaleToFit(100, 46);
     p2.drawImage(logoImg, { x: 30, y: H - 53, width: ld.width, height: ld.height });
+    if (agencyName) {
+      p2.drawText(trunc(agencyName, 24).toUpperCase(), { x: 30 + ld.width + 12, y: H - 34, size: 9, font: fontB, color: GOLD });
+    }
   } else if (agencyName) {
     p2.drawText(trunc(agencyName, 26).toUpperCase(), { x: 36, y: H - 38, size: 9, font: fontB, color: GOLD });
   }
@@ -478,6 +506,7 @@ export default function Home() {
   const [error, setError] = useState("");
   const [resultData, setResultData] = useState(null);
   const [emailCopied, setEmailCopied] = useState(false);
+  const [subjectCopied, setSubjectCopied] = useState(false);
   const logoRef = useRef();
 
   const isReady = pdfFile && photos.length > 0;
@@ -709,6 +738,25 @@ export default function Home() {
                 <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: "1.5px", textTransform: "uppercase", color: "#c8a96e", marginBottom: 12 }}>
                   Email di accompagnamento ({LANGUAGES.find(l => l.code === targetLang)?.label})
                 </div>
+                <div style={S.fieldLabel}>Oggetto</div>
+                <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+                  <input
+                    readOnly
+                    value={buildEmailSubject(resultData, targetLang)}
+                    style={{ ...S.input, color: "#4a4540", flex: 1 }}
+                  />
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(buildEmailSubject(resultData, targetLang));
+                      setSubjectCopied(true);
+                      setTimeout(() => setSubjectCopied(false), 2000);
+                    }}
+                    style={{ ...S.btnOutline, flexShrink: 0 }}
+                  >
+                    {subjectCopied ? "✓" : "📋"}
+                  </button>
+                </div>
+                <div style={S.fieldLabel}>Corpo</div>
                 <textarea
                   readOnly
                   value={buildEmailText(resultData, targetLang, agencyName)}
@@ -723,7 +771,7 @@ export default function Home() {
                     }}
                     style={S.btnOutline}
                   >
-                    {emailCopied ? "✓ Copiato" : "📋 Copia testo"}
+                    {emailCopied ? "✓ Copiato" : "📋 Copia corpo"}
                   </button>
                   <a
                     href={`mailto:?subject=${encodeURIComponent(buildEmailSubject(resultData, targetLang))}&body=${encodeURIComponent(buildEmailText(resultData, targetLang, agencyName))}`}
