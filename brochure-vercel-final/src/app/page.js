@@ -147,8 +147,8 @@ async function generatePDF(propertyData, photos, logoFile, agencyName, targetLan
   const p1 = pdfDoc.addPage([W, H]);
   p1.drawRectangle({ x: 0, y: 0, width: W, height: H, color: WHITE });
 
-  // Cover photo — top 65%
-  const coverPhotoH = Math.round(H * 0.65);
+  // Cover photo — top 52%
+  const coverPhotoH = Math.round(H * 0.52);
   if (embPhotos[0]) {
     const img = embPhotos[0];
     const scaleW = W / img.width;
@@ -181,8 +181,12 @@ async function generatePDF(propertyData, photos, logoFile, agencyName, targetLan
 
   // Tagline
   if (propertyData.tagline) {
-    p1.drawText(trunc(propertyData.tagline, 65), { x: 36, y: ty - 2, size: 10, font: fontI, color: GOLD });
-    ty -= 18;
+    const taglineLines = wrap(propertyData.tagline, 78).slice(0, 2);
+    taglineLines.forEach((line) => {
+      p1.drawText(line, { x: 36, y: ty - 2, size: 10, font: fontI, color: GOLD });
+      ty -= 15;
+    });
+    ty -= 3;
   }
   ty -= 8;
 
@@ -193,9 +197,9 @@ async function generatePDF(propertyData, photos, logoFile, agencyName, targetLan
   // Stats — 3 columns strictly within bounds
   const colW = Math.floor((W - 72) / 3);
   const statsData = [
-    propertyData.surface && { v: trunc(propertyData.surface, 40), l: L("surface") },
-    propertyData.rooms   && { v: trunc(propertyData.rooms, 40),   l: L("rooms") },
-    propertyData.location && { v: trunc(propertyData.location, 40), l: L("location") },
+    propertyData.surface && { v: trunc(propertyData.surface, 56), l: L("surface") },
+    propertyData.rooms   && { v: trunc(propertyData.rooms, 56),   l: L("rooms") },
+    propertyData.location && { v: trunc(propertyData.location, 56), l: L("location") },
   ].filter(Boolean);
 
   const statColMaxChars = Math.max(6, Math.floor((colW - 10) / 6.5));
@@ -220,8 +224,8 @@ async function generatePDF(propertyData, photos, logoFile, agencyName, targetLan
 
   // Logo top-right corner
   if (logoImg) {
-    const ld = logoImg.scaleToFit(110, 50);
-    p1.drawImage(logoImg, { x: W - ld.width - 24, y: H - ld.height - 18, width: ld.width, height: ld.height });
+    const ld = logoImg.scaleToFit(140, 64);
+    p1.drawImage(logoImg, { x: W - ld.width - 28, y: H - ld.height - 22, width: ld.width, height: ld.height });
   } else if (agencyName) {
     p1.drawText(trunc(agencyName, 22).toUpperCase(), { x: W - 180, y: H - 24, size: 8, font: fontB, color: WHITE });
   }
@@ -322,19 +326,23 @@ async function generatePDF(propertyData, photos, logoFile, agencyName, targetLan
     gp.drawRectangle({ x: 0, y: 0, width: W, height: H, color: rgb(0.06, 0.06, 0.08) });
 
     // Header
-    gp.drawRectangle({ x: 0, y: H - 48, width: W, height: 48, color: rgb(0.04, 0.04, 0.06) });
-    gp.drawRectangle({ x: 36, y: H - 47, width: 24, height: 1.5, color: GOLD });
-    gp.drawText(L("gallery"), { x: 36, y: H - 34, size: 7.5, font: fontB, color: MUTED });
-    gp.drawText(trunc((propertyData.title || "").toUpperCase(), 46), { x: 36, y: H - 20, size: 11, font: fontB, color: WHITE, maxWidth: W - 130 });
+    const galTitleLines = wrap((propertyData.title || "").toUpperCase(), 56).slice(0, 2);
+    const galHeaderH = galTitleLines.length > 1 ? 68 : 56;
+    gp.drawRectangle({ x: 0, y: H - galHeaderH, width: W, height: galHeaderH, color: rgb(0.04, 0.04, 0.06) });
+    gp.drawText(L("gallery"), { x: 36, y: H - 18, size: 7.5, font: fontB, color: MUTED });
+    gp.drawRectangle({ x: 36, y: H - 24, width: 24, height: 1.5, color: GOLD });
+    galTitleLines.forEach((line, li) => {
+      gp.drawText(line, { x: 36, y: H - 38 - li * 14, size: 11, font: fontB, color: WHITE, maxWidth: W - 140 });
+    });
     if (logoImg) {
-      const ld = logoImg.scaleToFit(70, 32);
-      gp.drawImage(logoImg, { x: W - ld.width - 20, y: H - 40, width: ld.width, height: ld.height });
+      const ld = logoImg.scaleToFit(70, 36);
+      gp.drawImage(logoImg, { x: W - ld.width - 20, y: H - galHeaderH + (galHeaderH - ld.height) / 2, width: ld.width, height: ld.height });
     }
 
     // 2 photos per page
     const pagePhotos = galleryPhotos.slice(gi, gi + 2);
     const hasTwo = pagePhotos.length === 2;
-    const MX = 24, pTop = H - 56, pBot = 28, GAP = 10;
+    const MX = 24, pTop = H - galHeaderH, pBot = 28, GAP = 10;
     const photoH = hasTwo ? Math.floor((pTop - pBot - GAP) / 2) : pTop - pBot;
     const photoW = W - MX * 2;
 
