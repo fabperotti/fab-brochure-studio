@@ -14,6 +14,42 @@ const LANGUAGES = [
   { code: "sv", label: "Svenska 🇸🇪" },
 ];
 
+// ── Email templates ──
+const EMAIL_T = {
+  en: { subject: (t) => `Exclusive Property: ${t}`, greeting: "Dear valued client,", intro: "We are pleased to present an exceptional property that matches your criteria:", attached: "Please find attached the full brochure with photos and details.", closing: "We would be delighted to arrange a viewing at your convenience.", regards: "Best regards,", priceLabel: "Price", locationLabel: "Location" },
+  pt: { subject: (t) => `Imóvel Exclusivo: ${t}`, greeting: "Caro(a) cliente,", intro: "Temos o prazer de lhe apresentar um imóvel excecional que corresponde aos seus critérios:", attached: "Em anexo encontrará a brochura completa com fotos e detalhes.", closing: "Ficaríamos muito satisfeitos em organizar uma visita à sua conveniência.", regards: "Com os melhores cumprimentos,", priceLabel: "Preço", locationLabel: "Localização" },
+  fr: { subject: (t) => `Bien d'exception : ${t}`, greeting: "Cher client,", intro: "Nous avons le plaisir de vous présenter un bien exceptionnel correspondant à vos critères :", attached: "Vous trouverez ci-joint la brochure complète avec photos et détails.", closing: "Nous serions ravis d'organiser une visite à votre convenance.", regards: "Cordialement,", priceLabel: "Prix", locationLabel: "Emplacement" },
+  de: { subject: (t) => `Exklusive Immobilie: ${t}`, greeting: "Sehr geehrte Damen und Herren,", intro: "Wir freuen uns, Ihnen eine außergewöhnliche Immobilie vorzustellen, die Ihren Kriterien entspricht:", attached: "Die vollständige Broschüre mit Fotos und Details finden Sie im Anhang.", closing: "Gerne vereinbaren wir einen Besichtigungstermin nach Ihren Wünschen.", regards: "Mit freundlichen Grüßen,", priceLabel: "Preis", locationLabel: "Lage" },
+  es: { subject: (t) => `Propiedad Exclusiva: ${t}`, greeting: "Estimado/a cliente,", intro: "Nos complace presentarle una propiedad excepcional que coincide con sus criterios:", attached: "Encontrará adjunto el folleto completo con fotos y detalles.", closing: "Estaríamos encantados de organizar una visita cuando le convenga.", regards: "Un cordial saludo,", priceLabel: "Precio", locationLabel: "Ubicación" },
+  zh: { subject: (t) => `独家房产：${t}`, greeting: "尊敬的客户，", intro: "我们很高兴向您介绍一处符合您要求的优质房产：", attached: "请查阅附件中包含照片和详细信息的完整宣传册。", closing: "我们将非常乐意根据您的方便安排实地参观。", regards: "祝好，", priceLabel: "价格", locationLabel: "位置" },
+  ar: { subject: (t) => `عقار فاخر: ${t}`, greeting: "عميلنا الكريم،", intro: "يسعدنا أن نقدم لكم عقارًا استثنائيًا يتوافق مع متطلباتكم:", attached: "ستجدون في المرفقات الكتيب الكامل مع الصور والتفاصيل.", closing: "يسعدنا ترتيب زيارة في الوقت الذي يناسبكم.", regards: "مع أطيب التحيات،", priceLabel: "السعر", locationLabel: "الموقع" },
+  ru: { subject: (t) => `Эксклюзивная недвижимость: ${t}`, greeting: "Уважаемый клиент,", intro: "Мы рады представить вам исключительный объект недвижимости, соответствующий вашим критериям:", attached: "Полная брошюра с фотографиями и подробностями во вложении.", closing: "Будем рады организовать просмотр в удобное для вас время.", regards: "С уважением,", priceLabel: "Цена", locationLabel: "Расположение" },
+  nl: { subject: (t) => `Exclusief Vastgoed: ${t}`, greeting: "Geachte klant,", intro: "Wij stellen u graag een uitzonderlijke woning voor die aan uw criteria voldoet:", attached: "In de bijlage vindt u de volledige brochure met foto's en details.", closing: "Wij organiseren graag een bezichtiging op een tijdstip dat u schikt.", regards: "Met vriendelijke groet,", priceLabel: "Prijs", locationLabel: "Locatie" },
+  sv: { subject: (t) => `Exklusiv Fastighet: ${t}`, greeting: "Bästa kund,", intro: "Vi har glädjen att presentera en exceptionell fastighet som matchar dina önskemål:", attached: "Den fullständiga broschyren med foton och detaljer bifogas.", closing: "Vi ser fram emot att ordna en visning när det passar dig.", regards: "Med vänliga hälsningar,", priceLabel: "Pris", locationLabel: "Läge" },
+};
+
+function buildEmailText(propertyData, targetLang, agencyName) {
+  const t = EMAIL_T[targetLang] || EMAIL_T.en;
+  const lines = [];
+  lines.push(t.greeting, "");
+  lines.push(t.intro, "");
+  lines.push(propertyData.title || "", "");
+  if (propertyData.tagline) lines.push(propertyData.tagline, "");
+  if (propertyData.description) lines.push(propertyData.description, "");
+  if (propertyData.location) lines.push(`${t.locationLabel}: ${propertyData.location}`);
+  if (propertyData.price) lines.push(`${t.priceLabel}: ${propertyData.price}`);
+  lines.push("", t.attached, "");
+  lines.push(t.closing, "");
+  lines.push(t.regards);
+  if (agencyName) lines.push(agencyName);
+  return lines.join("\n");
+}
+
+function buildEmailSubject(propertyData, targetLang) {
+  const t = EMAIL_T[targetLang] || EMAIL_T.en;
+  return t.subject(propertyData.title || "");
+}
+
 // ── PDF.js extraction ──
 async function loadPdfjs() {
   if (window.pdfjsLib) return window.pdfjsLib;
@@ -440,6 +476,8 @@ export default function Home() {
   const [downloadUrl, setDownloadUrl] = useState(null);
   const [downloadName, setDownloadName] = useState("");
   const [error, setError] = useState("");
+  const [resultData, setResultData] = useState(null);
+  const [emailCopied, setEmailCopied] = useState(false);
   const logoRef = useRef();
 
   const isReady = pdfFile && photos.length > 0;
@@ -487,6 +525,7 @@ export default function Home() {
       const fname = `brochure_${(propertyData.title || "property").replace(/[^a-z0-9]/gi, "_").toLowerCase()}_${targetLang}.pdf`;
       setDownloadUrl(url);
       setDownloadName(fname);
+      setResultData(propertyData);
       setStatus("done");
     } catch (err) {
       setError(err.message || "Errore sconosciuto.");
@@ -504,6 +543,12 @@ export default function Home() {
     URL.revokeObjectURL(photoUrls[i]);
     setPhotos(p => p.filter((_, j) => j !== i));
     setPhotoUrls(u => u.filter((_, j) => j !== i));
+  };
+
+  const setCover = (i) => {
+    if (i === 0) return;
+    setPhotos(p => { const arr = [...p]; const [item] = arr.splice(i, 1); arr.unshift(item); return arr; });
+    setPhotoUrls(u => { const arr = [...u]; const [item] = arr.splice(i, 1); arr.unshift(item); return arr; });
   };
 
   return (
@@ -566,7 +611,7 @@ export default function Home() {
             </div>
 
             <div>
-              <div style={S.fieldLabel}>Foto <span style={{ color: "#c8a96e" }}>*</span> <span style={{ fontWeight: 400, color: "#a09880" }}>· prima foto = copertina · max 40</span></div>
+              <div style={S.fieldLabel}>Foto <span style={{ color: "#c8a96e" }}>*</span> <span style={{ fontWeight: 400, color: "#a09880" }}>· clicca "Copertina" su una foto per usarla come cover · max 40</span></div>
               {photos.length === 0
                 ? <UploadZone accept="image/*" multiple onFiles={addPhotos}>
                     <div style={{ fontSize: 28, marginBottom: 8 }}>🖼</div>
@@ -578,7 +623,9 @@ export default function Home() {
                       {photoUrls.map((url, i) => (
                         <div key={i} style={S.photoThumb}>
                           <img src={url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }}/>
-                          {i === 0 && <div style={{ position: "absolute", bottom: 3, left: 3, background: "#c8a96e", color: "#fff", fontSize: 7, fontWeight: 700, padding: "2px 5px", borderRadius: 3 }}>COVER</div>}
+                          {i === 0
+                            ? <div style={{ position: "absolute", bottom: 3, left: 3, background: "#c8a96e", color: "#fff", fontSize: 7, fontWeight: 700, padding: "2px 5px", borderRadius: 3 }}>COVER</div>
+                            : <button style={{ position: "absolute", bottom: 3, left: 3, background: "rgba(0,0,0,0.6)", color: "#fff", border: "none", fontSize: 7, fontWeight: 700, padding: "2px 5px", borderRadius: 3, cursor: "pointer" }} onClick={() => setCover(i)}>COPERTINA</button>}
                           <button style={{ position: "absolute", top: 3, right: 3, background: "rgba(0,0,0,0.5)", border: "none", borderRadius: "50%", width: 18, height: 18, color: "#fff", cursor: "pointer", fontSize: 10 }} onClick={() => removePhoto(i)}>✕</button>
                         </div>
                       ))}
@@ -651,11 +698,45 @@ export default function Home() {
               <a href={downloadUrl} download={downloadName} style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "13px 26px", background: "#0e0e12", border: "none", borderRadius: 9, color: "#fff", fontSize: 14, fontWeight: 600, textDecoration: "none" }}>
                 ⬇ Scarica PDF
               </a>
-              <button onClick={() => { setStatus("idle"); setSteps([]); setProgress(0); if (downloadUrl) URL.revokeObjectURL(downloadUrl); setDownloadUrl(null); }}
+              <button onClick={() => { setStatus("idle"); setSteps([]); setProgress(0); if (downloadUrl) URL.revokeObjectURL(downloadUrl); setDownloadUrl(null); setResultData(null); }}
                 style={{ padding: "13px 26px", background: "#fff", border: "1px solid #e8e4de", borderRadius: 9, color: "#7a7060", fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
                 ↺ Nuova proprietà
               </button>
             </div>
+
+            {resultData && (
+              <div style={{ marginTop: 28, paddingTop: 24, borderTop: "1px solid #e8e4de", textAlign: "left" }}>
+                <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: "1.5px", textTransform: "uppercase", color: "#c8a96e", marginBottom: 12 }}>
+                  Email di accompagnamento ({LANGUAGES.find(l => l.code === targetLang)?.label})
+                </div>
+                <textarea
+                  readOnly
+                  value={buildEmailText(resultData, targetLang, agencyName)}
+                  style={{ ...S.textarea, minHeight: 220, fontSize: 12.5, color: "#4a4540" }}
+                />
+                <div style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(buildEmailText(resultData, targetLang, agencyName));
+                      setEmailCopied(true);
+                      setTimeout(() => setEmailCopied(false), 2000);
+                    }}
+                    style={S.btnOutline}
+                  >
+                    {emailCopied ? "✓ Copiato" : "📋 Copia testo"}
+                  </button>
+                  <a
+                    href={`mailto:?subject=${encodeURIComponent(buildEmailSubject(resultData, targetLang))}&body=${encodeURIComponent(buildEmailText(resultData, targetLang, agencyName))}`}
+                    style={{ ...S.btnOutline, textDecoration: "none", display: "inline-flex", alignItems: "center" }}
+                  >
+                    ✉ Apri in email
+                  </a>
+                </div>
+                <div style={{ fontSize: 11, color: "#a09880", marginTop: 8 }}>
+                  Ricorda di allegare il PDF scaricato a questa email.
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
