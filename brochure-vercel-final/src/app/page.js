@@ -157,6 +157,44 @@ async function generatePDF(propertyData, photos, logoFile, agencyName, targetLan
     return new Uint8Array(ab);
   }
 
+  // Resize + re-encode an image file as JPEG via canvas, to keep PDF size manageable.
+  // maxDim caps the longest side; quality is JPEG compression (0-1).
+  async function compressImage(file, maxDim = 1600, quality = 0.8) {
+    try {
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const img = await new Promise((resolve, reject) => {
+        const i = new Image();
+        i.onload = () => resolve(i);
+        i.onerror = reject;
+        i.src = dataUrl;
+      });
+      let { width, height } = img;
+      if (width > maxDim || height > maxDim) {
+        if (width >= height) { height = Math.round(height * (maxDim / width)); width = maxDim; }
+        else { width = Math.round(width * (maxDim / height)); height = maxDim; }
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      // Fill white background first — handles transparent PNGs converting to JPEG
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, width, height);
+      ctx.drawImage(img, 0, 0, width, height);
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+      if (!blob) return await fileToBytes(file); // fallback to original
+      const ab = await blob.arrayBuffer();
+      return new Uint8Array(ab);
+    } catch (_) {
+      return await fileToBytes(file); // fallback to original on any error
+    }
+  }
+
   function drawFooter(page, fontR, pageNum, totalPages, confidentialLabel) {
     page.drawRectangle({ x: 0, y: 0, width: W, height: 24, color: DARK });
     page.drawText(trunc(confidentialLabel, 72), { x: 36, y: 8, size: 5.5, font: fontR, color: MUTED });
@@ -178,13 +216,12 @@ async function generatePDF(propertyData, photos, logoFile, agencyName, targetLan
     } catch (_) {}
   }
 
-  // Embed photos
+  // Embed photos (resized + recompressed as JPEG to keep PDF size manageable)
   const embPhotos = [];
   for (const photo of photos.slice(0, 40)) {
     try {
-      const bytes = await fileToBytes(photo);
-      const isJpeg = photo.type === "image/jpeg" || /\.jpe?g$/i.test(photo.name);
-      const img = isJpeg ? await pdfDoc.embedJpg(bytes) : await pdfDoc.embedPng(bytes);
+      const bytes = await compressImage(photo);
+      const img = await pdfDoc.embedJpg(bytes);
       embPhotos.push(img);
     } catch (_) {}
   }
