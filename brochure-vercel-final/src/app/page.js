@@ -147,6 +147,37 @@ async function generatePDF(propertyData, photos, logoFile, agencyName, targetLan
     return lines;
   }
 
+  // Pixel-accurate wrap using real font metrics — avoids pdf-lib's drawText
+  // silently re-wrapping (via maxWidth) and desyncing our line-height advance,
+  // which previously caused overlapping/garbled lines in long descriptions.
+  function wrapByWidth(text, font, size, maxWidth) {
+    const words = (text || "").split(/\s+/).filter(Boolean);
+    const lines = [];
+    let cur = "";
+    for (const w of words) {
+      const test = cur ? cur + " " + w : w;
+      if (font.widthOfTextAtSize(test, size) <= maxWidth) {
+        cur = test;
+      } else {
+        if (cur) lines.push(cur);
+        // Single word wider than maxWidth: hard-break it character by character
+        if (font.widthOfTextAtSize(w, size) > maxWidth) {
+          let part = "";
+          for (const ch of w) {
+            const t2 = part + ch;
+            if (font.widthOfTextAtSize(t2, size) <= maxWidth) { part = t2; }
+            else { if (part) lines.push(part); part = ch; }
+          }
+          cur = part;
+        } else {
+          cur = w;
+        }
+      }
+    }
+    if (cur) lines.push(cur);
+    return lines;
+  }
+
   function trunc(str, max) {
     if (!str) return "";
     return str.length > max ? str.substring(0, max - 1) + "…" : str;
@@ -262,7 +293,7 @@ async function generatePDF(propertyData, photos, logoFile, agencyName, targetLan
   p1.drawRectangle({ x: 36, y: panelH - 16, width: 36, height: 1.5, color: GOLD });
 
   // Title
-  const titleLines = wrap((propertyData.title || "Exclusive Property").toUpperCase(), 34);
+  const titleLines = wrapByWidth((propertyData.title || "Exclusive Property").toUpperCase(), fontB, 17, W - 72);
   let ty = panelH - 38;
   for (const line of titleLines.slice(0, 3)) {
     p1.drawText(line, { x: 36, y: ty, size: 17, font: fontB, color: WHITE });
@@ -271,7 +302,7 @@ async function generatePDF(propertyData, photos, logoFile, agencyName, targetLan
 
   // Tagline
   if (propertyData.tagline) {
-    const taglineLines = wrap(propertyData.tagline, 78).slice(0, 2);
+    const taglineLines = wrapByWidth(propertyData.tagline, fontI, 10, W - 72).slice(0, 2);
     taglineLines.forEach((line) => {
       p1.drawText(line, { x: 36, y: ty - 2, size: 10, font: fontI, color: GOLD });
       ty -= 15;
@@ -292,14 +323,13 @@ async function generatePDF(propertyData, photos, logoFile, agencyName, targetLan
     propertyData.location && { v: trunc(propertyData.location, 56), l: L("location") },
   ].filter(Boolean);
 
-  const statColMaxChars = Math.max(6, Math.floor((colW - 10) / 6.5));
-  const statsWrapped = statsData.slice(0, 3).map(st => wrap(st.v, statColMaxChars).slice(0, 2));
+  const statsWrapped = statsData.slice(0, 3).map(st => wrapByWidth(st.v, fontB, 11, colW - 10).slice(0, 2));
   const maxValLines = Math.max(1, ...statsWrapped.map(l => l.length));
   statsData.slice(0, 3).forEach((st, i) => {
     const sx = 36 + i * colW;
     const valLines = statsWrapped[i];
     valLines.forEach((line, li) => {
-      p1.drawText(line, { x: sx, y: ty - li * 13, size: 11, font: fontB, color: WHITE, maxWidth: colW - 10 });
+      p1.drawText(line, { x: sx, y: ty - li * 13, size: 11, font: fontB, color: WHITE });
     });
     const labelY = ty - maxValLines * 13 - 2;
     p1.drawText(st.l, { x: sx, y: labelY, size: 6.5, font: fontR, color: MUTED });
@@ -358,8 +388,8 @@ async function generatePDF(propertyData, photos, logoFile, agencyName, targetLan
   curY -= 18;
   p2.drawText(L("description"), { x: MARGIN, y: curY, size: 8, font: fontB, color: MUTED });
   curY -= 18;
-  for (const line of wrap(propertyData.description || "", 96).slice(0, 18)) {
-    p2.drawText(line, { x: MARGIN, y: curY, size: 11, font: fontR, color: CHARCOAL, maxWidth: CW });
+  for (const line of wrapByWidth(propertyData.description || "", fontR, 11, CW).slice(0, 18)) {
+    p2.drawText(line, { x: MARGIN, y: curY, size: 11, font: fontR, color: CHARCOAL });
     curY -= 16;
   }
   curY -= 18;
@@ -375,24 +405,23 @@ async function generatePDF(propertyData, photos, logoFile, agencyName, targetLan
   const half = Math.ceil(features.length / 2);
   const col2X = MARGIN + Math.floor(CW / 2) + 8;
   const colMaxW = Math.floor(CW / 2) - 18;
-  const featCharsPerLine = Math.floor(colMaxW / 4.4);
   const lineH = 13;
   const gap = 8;
   let fy1 = curY, fy2 = curY;
 
   features.slice(0, half).slice(0, 10).forEach(f => {
-    const fLines = wrap(f, featCharsPerLine).slice(0, 2);
+    const fLines = wrapByWidth(f, fontR, 9, colMaxW).slice(0, 2);
     p2.drawRectangle({ x: MARGIN, y: fy1 + 3, width: 4, height: 4, color: GOLD });
     fLines.forEach((line, li) => {
-      p2.drawText(line, { x: MARGIN + 10, y: fy1 - li * lineH, size: 9, font: fontR, color: CHARCOAL, maxWidth: colMaxW });
+      p2.drawText(line, { x: MARGIN + 10, y: fy1 - li * lineH, size: 9, font: fontR, color: CHARCOAL });
     });
     fy1 -= fLines.length * lineH + gap;
   });
   features.slice(half).slice(0, 10).forEach(f => {
-    const fLines = wrap(f, featCharsPerLine).slice(0, 2);
+    const fLines = wrapByWidth(f, fontR, 9, colMaxW).slice(0, 2);
     p2.drawRectangle({ x: col2X, y: fy2 + 3, width: 4, height: 4, color: GOLD });
     fLines.forEach((line, li) => {
-      p2.drawText(line, { x: col2X + 10, y: fy2 - li * lineH, size: 9, font: fontR, color: CHARCOAL, maxWidth: colMaxW });
+      p2.drawText(line, { x: col2X + 10, y: fy2 - li * lineH, size: 9, font: fontR, color: CHARCOAL });
     });
     fy2 -= fLines.length * lineH + gap;
   });
@@ -427,13 +456,13 @@ async function generatePDF(propertyData, photos, logoFile, agencyName, targetLan
     gp.drawRectangle({ x: 0, y: 0, width: W, height: H, color: rgb(0.06, 0.06, 0.08) });
 
     // Header
-    const galTitleLines = wrap((propertyData.title || "").toUpperCase(), 56).slice(0, 2);
+    const galTitleLines = wrapByWidth((propertyData.title || "").toUpperCase(), fontB, 11, W - 140).slice(0, 2);
     const galHeaderH = galTitleLines.length > 1 ? 68 : 56;
     gp.drawRectangle({ x: 0, y: H - galHeaderH, width: W, height: galHeaderH, color: rgb(0.04, 0.04, 0.06) });
     gp.drawText(L("gallery"), { x: 36, y: H - 18, size: 7.5, font: fontB, color: MUTED });
     gp.drawRectangle({ x: 36, y: H - 24, width: 24, height: 1.5, color: GOLD });
     galTitleLines.forEach((line, li) => {
-      gp.drawText(line, { x: 36, y: H - 38 - li * 14, size: 11, font: fontB, color: WHITE, maxWidth: W - 140 });
+      gp.drawText(line, { x: 36, y: H - 38 - li * 14, size: 11, font: fontB, color: WHITE });
     });
     if (logoImg) {
       const ld = logoImg.scaleToFit(70, 36);
