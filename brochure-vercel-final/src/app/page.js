@@ -193,17 +193,24 @@ async function generatePDF(propertyData, photos, logoFile, agencyName, targetLan
   // Stats — 3 columns strictly within bounds
   const colW = Math.floor((W - 72) / 3);
   const statsData = [
-    propertyData.surface && { v: trunc(propertyData.surface, 16), l: L("surface") },
-    propertyData.rooms   && { v: trunc(propertyData.rooms, 16),   l: L("rooms") },
-    propertyData.location && { v: trunc(propertyData.location, 16), l: L("location") },
+    propertyData.surface && { v: trunc(propertyData.surface, 40), l: L("surface") },
+    propertyData.rooms   && { v: trunc(propertyData.rooms, 40),   l: L("rooms") },
+    propertyData.location && { v: trunc(propertyData.location, 40), l: L("location") },
   ].filter(Boolean);
 
+  const statColMaxChars = Math.max(6, Math.floor((colW - 10) / 6.5));
+  const statsWrapped = statsData.slice(0, 3).map(st => wrap(st.v, statColMaxChars).slice(0, 2));
+  const maxValLines = Math.max(1, ...statsWrapped.map(l => l.length));
   statsData.slice(0, 3).forEach((st, i) => {
     const sx = 36 + i * colW;
-    p1.drawText(st.v, { x: sx, y: ty, size: 11, font: fontB, color: WHITE, maxWidth: colW - 10 });
-    p1.drawText(st.l, { x: sx, y: ty - 14, size: 6.5, font: fontR, color: MUTED });
+    const valLines = statsWrapped[i];
+    valLines.forEach((line, li) => {
+      p1.drawText(line, { x: sx, y: ty - li * 13, size: 11, font: fontB, color: WHITE, maxWidth: colW - 10 });
+    });
+    const labelY = ty - maxValLines * 13 - 2;
+    p1.drawText(st.l, { x: sx, y: labelY, size: 6.5, font: fontR, color: MUTED });
   });
-  ty -= 34;
+  ty -= maxValLines * 13 + 16;
 
   // Price
   if (propertyData.price) {
@@ -213,8 +220,8 @@ async function generatePDF(propertyData, photos, logoFile, agencyName, targetLan
 
   // Logo top-right corner
   if (logoImg) {
-    const ld = logoImg.scaleToFit(72, 32);
-    p1.drawImage(logoImg, { x: W - ld.width - 20, y: H - ld.height - 14, width: ld.width, height: ld.height });
+    const ld = logoImg.scaleToFit(110, 50);
+    p1.drawImage(logoImg, { x: W - ld.width - 24, y: H - ld.height - 18, width: ld.width, height: ld.height });
   } else if (agencyName) {
     p1.drawText(trunc(agencyName, 22).toUpperCase(), { x: W - 180, y: H - 24, size: 8, font: fontB, color: WHITE });
   }
@@ -230,8 +237,8 @@ async function generatePDF(propertyData, photos, logoFile, agencyName, targetLan
   // Header
   p2.drawRectangle({ x: 0, y: H - 60, width: W, height: 60, color: DARK });
   if (logoImg) {
-    const ld = logoImg.scaleToFit(66, 34);
-    p2.drawImage(logoImg, { x: 36, y: H - 50, width: ld.width, height: ld.height });
+    const ld = logoImg.scaleToFit(100, 46);
+    p2.drawImage(logoImg, { x: 30, y: H - 53, width: ld.width, height: ld.height });
   } else if (agencyName) {
     p2.drawText(trunc(agencyName, 26).toUpperCase(), { x: 36, y: H - 38, size: 9, font: fontB, color: GOLD });
   }
@@ -246,8 +253,8 @@ async function generatePDF(propertyData, photos, logoFile, agencyName, targetLan
   curY -= 18;
   p2.drawText(L("description"), { x: MARGIN, y: curY, size: 8, font: fontB, color: MUTED });
   curY -= 18;
-  for (const line of wrap(propertyData.description || "", 68).slice(0, 20)) {
-    p2.drawText(line, { x: MARGIN, y: curY, size: 11, font: fontR, color: CHARCOAL });
+  for (const line of wrap(propertyData.description || "", 96).slice(0, 18)) {
+    p2.drawText(line, { x: MARGIN, y: curY, size: 11, font: fontR, color: CHARCOAL, maxWidth: CW });
     curY -= 16;
   }
   curY -= 18;
@@ -263,23 +270,35 @@ async function generatePDF(propertyData, photos, logoFile, agencyName, targetLan
   const half = Math.ceil(features.length / 2);
   const col2X = MARGIN + Math.floor(CW / 2) + 8;
   const colMaxW = Math.floor(CW / 2) - 18;
+  const featCharsPerLine = Math.floor(colMaxW / 4.4);
+  const lineH = 13;
+  const gap = 8;
   let fy1 = curY, fy2 = curY;
 
   features.slice(0, half).slice(0, 10).forEach(f => {
-    p2.drawRectangle({ x: MARGIN, y: fy1 + 4, width: 4, height: 4, color: GOLD });
-    p2.drawText(trunc(f, 36), { x: MARGIN + 10, y: fy1, size: 10, font: fontR, color: CHARCOAL, maxWidth: colMaxW });
-    fy1 -= 18;
+    const fLines = wrap(f, featCharsPerLine).slice(0, 2);
+    p2.drawRectangle({ x: MARGIN, y: fy1 + 3, width: 4, height: 4, color: GOLD });
+    fLines.forEach((line, li) => {
+      p2.drawText(line, { x: MARGIN + 10, y: fy1 - li * lineH, size: 9, font: fontR, color: CHARCOAL, maxWidth: colMaxW });
+    });
+    fy1 -= fLines.length * lineH + gap;
   });
   features.slice(half).slice(0, 10).forEach(f => {
-    p2.drawRectangle({ x: col2X, y: fy2 + 4, width: 4, height: 4, color: GOLD });
-    p2.drawText(trunc(f, 36), { x: col2X + 10, y: fy2, size: 10, font: fontR, color: CHARCOAL, maxWidth: colMaxW });
-    fy2 -= 18;
+    const fLines = wrap(f, featCharsPerLine).slice(0, 2);
+    p2.drawRectangle({ x: col2X, y: fy2 + 3, width: 4, height: 4, color: GOLD });
+    fLines.forEach((line, li) => {
+      p2.drawText(line, { x: col2X + 10, y: fy2 - li * lineH, size: 9, font: fontR, color: CHARCOAL, maxWidth: colMaxW });
+    });
+    fy2 -= fLines.length * lineH + gap;
   });
 
-  // Photo strip at bottom if space
-  const lowestY = Math.min(fy1, fy2) - 16;
-  if (lowestY > 60 && galleryPhotos.length > 0) {
-    const stripH = Math.min(lowestY - 36, 120);
+  // Photo strip below features
+  const lowestY = Math.min(fy1, fy2) - 20;
+  if (lowestY > 120 && galleryPhotos.length > 0) {
+    const stripTop = lowestY;
+    const stripBottom = 36;
+    const stripH = Math.min(stripTop - stripBottom, 280);
+    const stripY = stripBottom;
     const count = Math.min(galleryPhotos.length, 3);
     const stripW = (CW - (count - 1) * 8) / count;
     for (let i = 0; i < count; i++) {
@@ -287,7 +306,7 @@ async function generatePDF(propertyData, photos, logoFile, agencyName, targetLan
       const dims = img.scaleToFit(stripW, stripH);
       p2.drawImage(img, {
         x: MARGIN + i * (stripW + 8) + (stripW - dims.width) / 2,
-        y: 30 + (stripH - dims.height) / 2,
+        y: stripY + (stripH - dims.height) / 2,
         width: dims.width, height: dims.height,
       });
     }
@@ -308,8 +327,8 @@ async function generatePDF(propertyData, photos, logoFile, agencyName, targetLan
     gp.drawText(L("gallery"), { x: 36, y: H - 34, size: 7.5, font: fontB, color: MUTED });
     gp.drawText(trunc((propertyData.title || "").toUpperCase(), 46), { x: 36, y: H - 20, size: 11, font: fontB, color: WHITE, maxWidth: W - 130 });
     if (logoImg) {
-      const ld = logoImg.scaleToFit(52, 26);
-      gp.drawImage(logoImg, { x: W - ld.width - 24, y: H - 40, width: ld.width, height: ld.height });
+      const ld = logoImg.scaleToFit(70, 32);
+      gp.drawImage(logoImg, { x: W - ld.width - 20, y: H - 40, width: ld.width, height: ld.height });
     }
 
     // 2 photos per page
