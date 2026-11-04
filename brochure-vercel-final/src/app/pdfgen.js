@@ -1,3 +1,6 @@
+// Obrigatório por lei (Lei n.º 15/2013, art. 13.º). NÃO remover.
+const AGENCY_LEGAL_ID = "Groupe Mackay Prestige · AMI 17430";
+
 async function loadPdfLibIfNeeded() {
   if (window.PDFLib) return window.PDFLib;
   return new Promise((resolve, reject) => {
@@ -60,7 +63,10 @@ async function generatePDF(propertyData, photos, logoFile, agencyName, targetLan
 
   function drawFooter(page, fontR, pageNum, totalPages, confidentialLabel) {
     page.drawRectangle({ x: 0, y: 0, width: W, height: 24, color: DARK });
-    page.drawText(trunc(confidentialLabel, 72), { x: 36, y: 8, size: 5.5, font: fontR, color: MUTED });
+    page.drawText(trunc(confidentialLabel, 60), { x: 36, y: 8, size: 5.5, font: fontR, color: MUTED });
+    // Mandatory legal identification (Lei 15/2013, art. 13.º) — on every page
+    const legalW = fontB.widthOfTextAtSize(AGENCY_LEGAL_ID, 7);
+    page.drawText(AGENCY_LEGAL_ID, { x: W - 60 - legalW, y: 8, size: 7, font: fontB, color: GOLD });
     page.drawText(`${pageNum} / ${totalPages}`, { x: W - 44, y: 8, size: 6.5, font: fontR, color: MUTED });
   }
 

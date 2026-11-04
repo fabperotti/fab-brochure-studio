@@ -1,6 +1,11 @@
 "use client";
 import { useState, useCallback, useRef } from "react";
 
+// Obrigatório por lei (Lei n.º 15/2013, art. 13.º): nome da agência + n.º de licença AMI
+// em toda a publicidade imobiliária. NÃO remover.
+const AGENCY_LEGAL_NAME = "Groupe Mackay Prestige";
+const AGENCY_LEGAL_ID = "Groupe Mackay Prestige · AMI 17430";
+
 const LANGUAGES = [
   { code: "en", label: "English 🇬🇧" },
   { code: "pt", label: "Português 🇵🇹" },
@@ -56,7 +61,7 @@ function buildEmailText(propertyData, targetLang, agencyName) {
   paragraphs.push(t.attached);
   paragraphs.push(t.closing);
 
-  const signature = agencyName ? `${t.regards}\n${agencyName}` : t.regards;
+  const signature = `${t.regards}\n${AGENCY_LEGAL_ID}`;
   paragraphs.push(signature);
 
   return paragraphs.join("\n\n");
@@ -228,7 +233,10 @@ async function generatePDF(propertyData, photos, logoFile, agencyName, targetLan
 
   function drawFooter(page, fontR, pageNum, totalPages, confidentialLabel) {
     page.drawRectangle({ x: 0, y: 0, width: W, height: 24, color: DARK });
-    page.drawText(trunc(confidentialLabel, 72), { x: 36, y: 8, size: 5.5, font: fontR, color: MUTED });
+    page.drawText(trunc(confidentialLabel, 60), { x: 36, y: 8, size: 5.5, font: fontR, color: MUTED });
+    // Mandatory legal identification (Lei 15/2013, art. 13.º) — on every page
+    const legalW = fontB.widthOfTextAtSize(AGENCY_LEGAL_ID, 7);
+    page.drawText(AGENCY_LEGAL_ID, { x: W - 60 - legalW, y: 8, size: 7, font: fontB, color: GOLD });
     page.drawText(`${pageNum} / ${totalPages}`, { x: W - 44, y: 8, size: 6.5, font: fontR, color: MUTED });
   }
 
@@ -561,7 +569,7 @@ export default function Home() {
   const [photoUrls, setPhotoUrls] = useState([]);
   const [logoFile, setLogoFile] = useState(null);
   const [logoUrl, setLogoUrl] = useState(null);
-  const [agencyName, setAgencyName] = useState("");
+  const [agencyName, setAgencyName] = useState(AGENCY_LEGAL_NAME);
   const [agencyNotes, setAgencyNotes] = useState("");
   const [targetLang, setTargetLang] = useState("en");
   const [status, setStatus] = useState("idle");
@@ -683,6 +691,7 @@ export default function Home() {
             </div>
             <div style={S.fieldLabel}>Nome agenzia</div>
             <input style={S.input} type="text" placeholder="es. Groupe Mackay Prestige" value={agencyName} onChange={e => setAgencyName(e.target.value)}/>
+            <div style={{ fontSize: 11, color: "#a09880", marginTop: 6 }}>Il piè di pagina di ogni pagina riporta sempre «{AGENCY_LEGAL_ID}» (obbligo di legge, Lei 15/2013)</div>
           </div>
 
           {/* Property */}
