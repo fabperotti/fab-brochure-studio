@@ -233,17 +233,90 @@ async function generatePDF(propertyData, photos, logoFile, agencyName, targetLan
 
   function drawFooter(page, fontR, pageNum, totalPages, confidentialLabel) {
     page.drawRectangle({ x: 0, y: 0, width: W, height: 24, color: DARK });
-    page.drawText(trunc(confidentialLabel, 60), { x: 36, y: 8, size: 5.5, font: fontR, color: MUTED });
+    drawT(page, trunc(confidentialLabel, 60), { x: 36, y: 8, size: 5.5, font: fontR, color: MUTED });
     // Mandatory legal identification (Lei 15/2013, art. 13.º) — on every page
-    const legalW = fontB.widthOfTextAtSize(AGENCY_LEGAL_ID, 7);
-    page.drawText(AGENCY_LEGAL_ID, { x: W - 60 - legalW, y: 8, size: 7, font: fontB, color: GOLD });
-    page.drawText(`${pageNum} / ${totalPages}`, { x: W - 44, y: 8, size: 6.5, font: fontR, color: MUTED });
+    const legalW = fontLatinB.widthOfTextAtSize(AGENCY_LEGAL_ID, 7);
+    drawT(page, AGENCY_LEGAL_ID, { x: W - 60 - legalW, y: 8, size: 7, font: fontLatinB, color: GOLD, ltr: true });
+    drawT(page, `${pageNum} / ${totalPages}`, { x: W - 44, y: 8, size: 6.5, font: fontLatinR, color: MUTED, ltr: true });
   }
 
   const pdfDoc = await PDFDocument.create();
-  const fontR = await pdfDoc.embedFont(StandardFonts.Helvetica);
-  const fontB = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-  const fontI = await pdfDoc.embedFont(StandardFonts.HelveticaOblique);
+  // ── Fonts ──
+  // Helvetica (built into PDF) only covers Western European characters.
+  // Russian, Chinese and Arabic need real font files, served from /public/fonts.
+  // Chinese/Arabic must be embedded whole: pdf-lib's subsetting breaks their glyphs.
+  const SCRIPT_FONTS = {
+    ru: { regular: "/fonts/NotoSans-Regular.ttf",           bold: "/fonts/NotoSans-Bold.ttf",           subset: true },
+    zh: { regular: "/fonts/NotoSansSC-Regular.ttf",         bold: "/fonts/NotoSansSC-Bold.ttf",         subset: false },
+    ar: { regular: "/fonts/IBMPlexSansArabic-Regular.ttf",  bold: "/fonts/IBMPlexSansArabic-Bold.ttf",  subset: false },
+  };
+  let fontR, fontB, fontI;
+  const scriptFont = SCRIPT_FONTS[lang];
+  if (scriptFont) {
+    const fontkit = (await import("@pdf-lib/fontkit")).default;
+    pdfDoc.registerFontkit(fontkit);
+    const [regBytes, boldBytes] = await Promise.all([scriptFont.regular, scriptFont.bold].map(async (url) => {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Font non disponibile: ${url}`);
+      return new Uint8Array(await res.arrayBuffer());
+    }));
+    fontR = await pdfDoc.embedFont(regBytes, { subset: scriptFont.subset });
+    fontB = await pdfDoc.embedFont(boldBytes, { subset: scriptFont.subset });
+    fontI = fontR; // no italic for these scripts
+  } else {
+    fontR = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    fontB = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    fontI = await pdfDoc.embedFont(StandardFonts.HelveticaOblique);
+  }
+
+  // Footer legal line + page numbers are pure Latin: always Helvetica, so the
+  // mandatory "Groupe Mackay Prestige · AMI 17430" looks identical in every language.
+  const fontLatinR = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const fontLatinB = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+  // ── Right-to-left (Arabic) ──
+  // The whole text layout is mirrored horizontally, and each line is split into
+  // direction runs so numbers, prices and "AMI 17430" stay left-to-right.
+  const IS_RTL = lang === "ar";
+  const bidi = IS_RTL ? (await import("bidi-js")).default() : null;
+
+  // Mirror a box's x position for RTL pages (decorations, bullets)
+  const mx = (x, w) => (IS_RTL ? W - x - w : x);
+
+  function drawT(page, text, opts) {
+    if (!text) return;
+    if (!IS_RTL) { const { ltr, ...o } = opts; page.drawText(text, o); return; }
+    const { font, size, ltr, ...drawOpts } = opts;
+    // ltr: true → numbers/codes that must read left-to-right (prices, page numbers, AMI)
+    const { levels } = bidi.getEmbeddingLevels(text, ltr ? "ltr" : "rtl");
+    const runs = [];
+    let start = 0;
+    for (let i = 1; i <= text.length; i++) {
+      if (i === text.length || levels[i] !== levels[start]) {
+        runs.push({ text: text.slice(start, i), level: levels[start] });
+        start = i;
+      }
+    }
+    // Unicode bidi rule L2, at run granularity (font shaping reverses RTL runs internally)
+    const maxLevel = Math.max(...runs.map(r => r.level));
+    for (let lvl = maxLevel; lvl >= 1; lvl--) {
+      for (let i = 0; i < runs.length; ) {
+        if (runs[i].level >= lvl) {
+          let j = i;
+          while (j < runs.length && runs[j].level >= lvl) j++;
+          const seg = runs.slice(i, j).reverse();
+          runs.splice(i, j - i, ...seg);
+          i = j;
+        } else i++;
+      }
+    }
+    const widths = runs.map(r => font.widthOfTextAtSize(r.text, size));
+    let x = W - opts.x - widths.reduce((a, b) => a + b, 0);
+    runs.forEach((r, i) => {
+      page.drawText(r.text, { ...drawOpts, font, size, x });
+      x += widths[i];
+    });
+  }
 
   // Embed logo
   let logoImg = null;
@@ -298,13 +371,13 @@ async function generatePDF(propertyData, photos, logoFile, agencyName, targetLan
   p1.drawRectangle({ x: 0, y: 0, width: W, height: panelH, color: DARK });
 
   // Gold rule
-  p1.drawRectangle({ x: 36, y: panelH - 16, width: 36, height: 1.5, color: GOLD });
+  p1.drawRectangle({ x: mx(36, 36), y: panelH - 16, width: 36, height: 1.5, color: GOLD });
 
   // Title
   const titleLines = wrapByWidth((propertyData.title || "Exclusive Property").toUpperCase(), fontB, 17, W - 72);
   let ty = panelH - 38;
   for (const line of titleLines.slice(0, 3)) {
-    p1.drawText(line, { x: 36, y: ty, size: 17, font: fontB, color: WHITE });
+    drawT(p1, line, { x: 36, y: ty, size: 17, font: fontB, color: WHITE });
     ty -= 22;
   }
 
@@ -312,7 +385,7 @@ async function generatePDF(propertyData, photos, logoFile, agencyName, targetLan
   if (propertyData.tagline) {
     const taglineLines = wrapByWidth(propertyData.tagline, fontI, 10, W - 72).slice(0, 2);
     taglineLines.forEach((line) => {
-      p1.drawText(line, { x: 36, y: ty - 2, size: 10, font: fontI, color: GOLD });
+      drawT(p1, line, { x: 36, y: ty - 2, size: 10, font: fontI, color: GOLD });
       ty -= 15;
     });
     ty -= 3;
@@ -337,17 +410,17 @@ async function generatePDF(propertyData, photos, logoFile, agencyName, targetLan
     const sx = 36 + i * colW;
     const valLines = statsWrapped[i];
     valLines.forEach((line, li) => {
-      p1.drawText(line, { x: sx, y: ty - li * 13, size: 11, font: fontB, color: WHITE });
+      drawT(p1, line, { x: sx, y: ty - li * 13, size: 11, font: fontB, color: WHITE });
     });
     const labelY = ty - maxValLines * 13 - 2;
-    p1.drawText(st.l, { x: sx, y: labelY, size: 6.5, font: fontR, color: MUTED });
+    drawT(p1, st.l, { x: sx, y: labelY, size: 6.5, font: fontR, color: MUTED });
   });
   ty -= maxValLines * 13 + 16;
 
   // Price
   if (propertyData.price) {
     p1.drawRectangle({ x: 36, y: ty + 4, width: W - 72, height: 0.5, color: GOLD, opacity: 0.25 });
-    p1.drawText(trunc(propertyData.price, 28), { x: 36, y: ty - 14, size: 14, font: fontB, color: GOLD });
+    drawT(p1, trunc(propertyData.price, 28), { x: 36, y: ty - 14, size: 14, font: fontB, color: GOLD, ltr: true });
   }
 
   // Logo top-right corner
@@ -360,9 +433,9 @@ async function generatePDF(propertyData, photos, logoFile, agencyName, targetLan
       // Show agency name in the dark panel, right-aligned, above the footer
       const nameText = trunc(agencyName, 30).toUpperCase();
       const nameWidth = fontB.widthOfTextAtSize(nameText, 8);
-      p1.drawText(nameText, { x: W - 36 - nameWidth, y: 32, size: 8, font: fontB, color: GOLD });
+      drawT(p1, nameText, { x: W - 36 - nameWidth, y: 32, size: 8, font: fontB, color: GOLD });
     } else {
-      p1.drawText(trunc(agencyName, 22).toUpperCase(), { x: W - 180, y: H - 24, size: 8, font: fontB, color: WHITE });
+      drawT(p1, trunc(agencyName, 22).toUpperCase(), { x: W - 180, y: H - 24, size: 8, font: fontB, color: WHITE });
     }
   }
 
@@ -380,33 +453,33 @@ async function generatePDF(propertyData, photos, logoFile, agencyName, targetLan
     const ld = logoImg.scaleToFit(100, 46);
     p2.drawImage(logoImg, { x: 30, y: H - 53, width: ld.width, height: ld.height });
     if (agencyName) {
-      p2.drawText(trunc(agencyName, 24).toUpperCase(), { x: 30 + ld.width + 12, y: H - 34, size: 9, font: fontB, color: GOLD });
+      drawT(p2, trunc(agencyName, 24).toUpperCase(), { x: 30 + ld.width + 12, y: H - 34, size: 9, font: fontB, color: GOLD });
     }
   } else if (agencyName) {
-    p2.drawText(trunc(agencyName, 26).toUpperCase(), { x: 36, y: H - 38, size: 9, font: fontB, color: GOLD });
+    drawT(p2, trunc(agencyName, 26).toUpperCase(), { x: 36, y: H - 38, size: 9, font: fontB, color: GOLD });
   }
-  p2.drawText("LUXURY REAL ESTATE", { x: W - 155, y: H - 38, size: 7, font: fontR, color: MUTED });
+  drawT(p2, "LUXURY REAL ESTATE", { x: W - 155, y: H - 38, size: 7, font: fontR, color: MUTED });
 
   const MARGIN = 40;
   const CW = W - MARGIN * 2;
   let curY = H - 84;
 
   // Description
-  p2.drawRectangle({ x: MARGIN, y: curY, width: 28, height: 1.5, color: GOLD });
+  p2.drawRectangle({ x: mx(MARGIN, 28), y: curY, width: 28, height: 1.5, color: GOLD });
   curY -= 18;
-  p2.drawText(L("description"), { x: MARGIN, y: curY, size: 8, font: fontB, color: MUTED });
+  drawT(p2, L("description"), { x: MARGIN, y: curY, size: 8, font: fontB, color: MUTED });
   curY -= 18;
   for (const line of wrapByWidth(propertyData.description || "", fontR, 11, CW).slice(0, 18)) {
-    p2.drawText(line, { x: MARGIN, y: curY, size: 11, font: fontR, color: CHARCOAL });
+    drawT(p2, line, { x: MARGIN, y: curY, size: 11, font: fontR, color: CHARCOAL });
     curY -= 16;
   }
   curY -= 18;
 
   // Separator + Features
   p2.drawRectangle({ x: MARGIN, y: curY + 8, width: CW, height: 0.5, color: GOLD, opacity: 0.3 });
-  p2.drawRectangle({ x: MARGIN, y: curY - 4, width: 28, height: 1.5, color: GOLD });
+  p2.drawRectangle({ x: mx(MARGIN, 28), y: curY - 4, width: 28, height: 1.5, color: GOLD });
   curY -= 22;
-  p2.drawText(L("features"), { x: MARGIN, y: curY, size: 8, font: fontB, color: MUTED });
+  drawT(p2, L("features"), { x: MARGIN, y: curY, size: 8, font: fontB, color: MUTED });
   curY -= 22;
 
   const features = propertyData.features || [];
@@ -419,17 +492,17 @@ async function generatePDF(propertyData, photos, logoFile, agencyName, targetLan
 
   features.slice(0, half).slice(0, 10).forEach(f => {
     const fLines = wrapByWidth(f, fontR, 9, colMaxW).slice(0, 2);
-    p2.drawRectangle({ x: MARGIN, y: fy1 + 3, width: 4, height: 4, color: GOLD });
+    p2.drawRectangle({ x: mx(MARGIN, 4), y: fy1 + 3, width: 4, height: 4, color: GOLD });
     fLines.forEach((line, li) => {
-      p2.drawText(line, { x: MARGIN + 10, y: fy1 - li * lineH, size: 9, font: fontR, color: CHARCOAL });
+      drawT(p2, line, { x: MARGIN + 10, y: fy1 - li * lineH, size: 9, font: fontR, color: CHARCOAL });
     });
     fy1 -= fLines.length * lineH + gap;
   });
   features.slice(half).slice(0, 10).forEach(f => {
     const fLines = wrapByWidth(f, fontR, 9, colMaxW).slice(0, 2);
-    p2.drawRectangle({ x: col2X, y: fy2 + 3, width: 4, height: 4, color: GOLD });
+    p2.drawRectangle({ x: mx(col2X, 4), y: fy2 + 3, width: 4, height: 4, color: GOLD });
     fLines.forEach((line, li) => {
-      p2.drawText(line, { x: col2X + 10, y: fy2 - li * lineH, size: 9, font: fontR, color: CHARCOAL });
+      drawT(p2, line, { x: col2X + 10, y: fy2 - li * lineH, size: 9, font: fontR, color: CHARCOAL });
     });
     fy2 -= fLines.length * lineH + gap;
   });
@@ -467,10 +540,10 @@ async function generatePDF(propertyData, photos, logoFile, agencyName, targetLan
     const galTitleLines = wrapByWidth((propertyData.title || "").toUpperCase(), fontB, 11, W - 140).slice(0, 2);
     const galHeaderH = galTitleLines.length > 1 ? 68 : 56;
     gp.drawRectangle({ x: 0, y: H - galHeaderH, width: W, height: galHeaderH, color: rgb(0.04, 0.04, 0.06) });
-    gp.drawText(L("gallery"), { x: 36, y: H - 18, size: 7.5, font: fontB, color: MUTED });
-    gp.drawRectangle({ x: 36, y: H - 24, width: 24, height: 1.5, color: GOLD });
+    drawT(gp, L("gallery"), { x: 36, y: H - 18, size: 7.5, font: fontB, color: MUTED });
+    gp.drawRectangle({ x: mx(36, 24), y: H - 24, width: 24, height: 1.5, color: GOLD });
     galTitleLines.forEach((line, li) => {
-      gp.drawText(line, { x: 36, y: H - 38 - li * 14, size: 11, font: fontB, color: WHITE });
+      drawT(gp, line, { x: 36, y: H - 38 - li * 14, size: 11, font: fontB, color: WHITE });
     });
     if (logoImg) {
       const ld = logoImg.scaleToFit(70, 36);
